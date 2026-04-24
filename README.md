@@ -2,35 +2,38 @@
 
 Simple LMS adalah project **Learning Management System (LMS)** sederhana berbasis **Django**, **PostgreSQL**, dan **Docker**.
 
-Project ini dibuat untuk memenuhi tugas **Capstone Progress 1 & Progress 2**:
-- **Progress 1**: Docker & Django Foundation
-- **Progress 2**: Database Design & ORM Implementation
-
 ---
 
-## 🚀 Features
+## 🚀 Features per Progress
 
-### Progress 1
+### Progress 1 — Docker & Django Foundation
 - Setup project Django menggunakan Docker
 - Konfigurasi PostgreSQL di Docker
 - Environment variables untuk database
 - Django dapat diakses di `localhost:8000`
 
-### Progress 2
+### Progress 2 — Database Design & ORM Implementation
 - User role management (`admin`, `instructor`, `student`)
 - Category hierarchy (self-referencing)
-- Course dan Lesson management
+- Course & Lesson management
 - Student Enrollment
 - Lesson Progress Tracking
 - Query Optimization dengan `select_related()` dan `prefetch_related()`
 - Django Admin configuration
-- Initial data fixtures
+
+### Progress 3 — REST API & Authentication System ✅
+- REST API lengkap menggunakan **Django Ninja**
+- **JWT Authentication** (access token + refresh token)
+- **Role-Based Access Control** (`@is_instructor`, `@is_admin`, `@is_student`)
+- **Pydantic schema validation** untuk semua endpoint
+- **Swagger UI** di `/api/docs`
+- **Postman Collection** untuk testing semua endpoint
 
 ---
 
 ## 📂 Project Structure
 
-```bash
+```
 simple-lms/
 ├── .gitignore
 ├── docker-compose.yml
@@ -39,33 +42,37 @@ simple-lms/
 ├── manage.py
 ├── README.md
 ├── lms_fixture.json
+├── Simple_LMS_API.postman_collection.json   ← NEW (Progress 3)
 ├── config/
-│   ├── __init__.py
 │   ├── settings.py
-│   ├── urls.py
-│   ├── asgi.py
-│   └── wsgi.py
+│   └── urls.py
 └── lms/
-    ├── __init__.py
-    ├── admin.py
-    ├── apps.py
     ├── models.py
+    ├── admin.py
+    ├── api.py           ← NEW — NinjaAPI entrypoint
+    ├── auth_utils.py    ← NEW — JWT helpers
+    ├── permissions.py   ← NEW — JWTAuth + role decorators
+    ├── schemas.py       ← NEW — Pydantic schemas
     ├── query_demo.py
-    ├── migrations/
-    │   ├── __init__.py
-    │   └── 0001_initial.py
-    └──
+    ├── routers/         ← NEW
+    │   ├── auth.py
+    │   ├── courses.py
+    │   └── enrollments.py
+    └── migrations/
 ```
 
 ---
 
 ## ⚙️ Tech Stack
 
-- **Python 3.10**
-- **Django 4.x**
-- **PostgreSQL 15**
-- **Docker**
-- **Docker Compose**
+| Layer | Technology |
+|---|---|
+| Language | Python 3.10 |
+| Framework | Django 4.2 |
+| REST API | Django Ninja 1.3 |
+| Auth | PyJWT 2.8 |
+| Database | PostgreSQL 15 |
+| Container | Docker / Docker Compose |
 
 ---
 
@@ -87,22 +94,144 @@ docker-compose up --build
 docker-compose exec web python manage.py migrate
 ```
 
-### 4. Buat Superuser (Opsional)
+### 4. (Opsional) Load Fixture Data
 ```bash
-docker-compose exec web python manage.py createsuperuser
+docker-compose exec web python manage.py loaddata lms_fixture.json
 ```
 
 ### 5. Akses Project
-- **Django App** → http://localhost:8000
-- **Django Admin** → http://localhost:8000/admin
+| URL | Keterangan |
+|---|---|
+| http://localhost:8000/admin | Django Admin |
+| http://localhost:8000/api/docs | **Swagger UI** |
+
+---
+
+## 🔐 API — Authentication
+
+### Register
+```http
+POST /api/auth/register
+Content-Type: application/json
+
+{
+  "username": "budi",
+  "email": "budi@example.com",
+  "password": "rahasia123",
+  "role": "student"
+}
+```
+
+### Login
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "username": "budi",
+  "password": "rahasia123"
+}
+```
+Response:
+```json
+{
+  "access_token": "<jwt>",
+  "refresh_token": "<jwt>",
+  "token_type": "bearer"
+}
+```
+
+### Menggunakan Token
+Sertakan header berikut di semua request yang memerlukan autentikasi:
+```
+Authorization: Bearer <access_token>
+```
+
+---
+
+## 📋 API Endpoints
+
+### Auth (`/api/auth/`)
+| Method | Path | Keterangan | Auth |
+|---|---|---|---|
+| POST | `/register` | Daftar user baru | — |
+| POST | `/login` | Login, dapat JWT | — |
+| POST | `/refresh` | Refresh access token | — |
+| GET | `/me` | Profil user saat ini | ✅ |
+| PUT | `/me` | Update profil | ✅ |
+
+### Courses (`/api/courses/`)
+| Method | Path | Keterangan | Auth | Role |
+|---|---|---|---|---|
+| GET | `/` | List courses (pagination + filter) | — | — |
+| GET | `/{id}` | Detail course | — | — |
+| POST | `/` | Buat course | ✅ | instructor / admin |
+| PATCH | `/{id}` | Update course | ✅ | owner / admin |
+| DELETE | `/{id}` | Hapus course | ✅ | admin |
+
+#### Query Parameters untuk List Courses
+| Param | Tipe | Default | Keterangan |
+|---|---|---|---|
+| `page` | int | 1 | Halaman |
+| `page_size` | int | 10 | Item per halaman (max 100) |
+| `search` | string | — | Filter berdasarkan judul |
+| `category_id` | int | — | Filter berdasarkan kategori |
+
+### Enrollments (`/api/enrollments/`)
+| Method | Path | Keterangan | Auth | Role |
+|---|---|---|---|---|
+| POST | `/` | Enroll ke course | ✅ | student / admin |
+| GET | `/my-courses` | Courses yang diikuti | ✅ | any |
+| POST | `/{id}/progress` | Tandai lesson selesai | ✅ | any |
+
+---
+
+## 🛡️ Role-Based Access Control
+
+| Role | Register/Login | Create Course | Update Course | Delete Course | Enroll |
+|---|---|---|---|---|---|
+| **student** | ✅ | ❌ | ❌ | ❌ | ✅ |
+| **instructor** | ✅ | ✅ | ✅ (own) | ❌ | ❌ |
+| **admin** | ✅ | ✅ | ✅ (all) | ✅ | ✅ |
+
+---
+
+## 📖 Swagger UI
+
+Akses dokumentasi interaktif di:
+
+```
+http://localhost:8000/api/docs
+```
+
+Fitur:
+- Semua endpoint terdokumentasi otomatis
+- Bisa langsung test dari browser
+- Input schema validation terlihat jelas
+- Tombol **Authorize** untuk JWT token
+
+---
+
+## 📦 Postman Collection
+
+File: `Simple_LMS_API.postman_collection.json`
+
+### Import ke Postman
+1. Buka Postman → **Import**
+2. Pilih file `Simple_LMS_API.postman_collection.json`
+3. Jalankan **Login** → token otomatis tersimpan ke collection variable `token`
+4. Semua request protected otomatis menggunakan token
+
+### Flow Testing
+```
+Register (instructor) → Login → Create Course
+Register (student)    → Login → Enroll → My Courses → Mark Progress
+```
 
 ---
 
 ## 🗄️ Environment Variables
 
-Project ini menggunakan environment variables untuk koneksi database PostgreSQL.
-
-### Contoh konfigurasi:
 ```env
 DB_NAME=lms_db
 DB_USER=lms_user
@@ -113,163 +242,6 @@ DB_PORT=5432
 
 ---
 
-## 🧩 Data Models
-
-Project ini memiliki beberapa model utama:
-
-### 1. UserProfile
-Menambahkan role pada user Django:
-- `admin`
-- `instructor`
-- `student`
-
-### 2. Category
-Model kategori yang mendukung **hierarchy / parent-child** menggunakan self-referencing relationship.
-
-### 3. Course
-Setiap course memiliki:
-- title
-- description
-- instructor
-- category
-
-### 4. Lesson
-Setiap lesson:
-- terhubung ke course
-- memiliki urutan (`order`)
-
-### 5. Enrollment
-Menghubungkan student dengan course.
-
-**Constraint:**
-- satu student tidak bisa mengambil course yang sama lebih dari satu kali
-
-### 6. Progress
-Melacak penyelesaian lesson oleh student.
-
----
-
-## ⚡ Query Optimization
-
-Project ini menggunakan custom QuerySet untuk optimasi query database.
-
-### 1. Course Listing
-```python
-Course.objects.for_listing()
-```
-
-Optimasi yang digunakan:
-- `select_related()`
-- `annotate()`
-
-Digunakan untuk:
-- mengambil instructor
-- mengambil category
-- menghitung jumlah lesson
-- menghitung jumlah student
-
-### 2. Student Dashboard
-```python
-Enrollment.objects.for_student_dashboard()
-```
-
-Optimasi yang digunakan:
-- `select_related()`
-- `prefetch_related()`
-
-Digunakan untuk:
-- student
-- course
-- category
-- instructor
-- lessons
-- progress records
-
----
-
-## 🧪 Query Optimization Demo
-
-File demo tersedia di:
-
-```bash
-lms/query_demo.py
-```
-
-### Cara menjalankan demo
-
-#### PowerShell (Windows)
-```powershell
-Get-Content lms/query_demo.py | docker-compose exec -T web python manage.py shell
-```
-
-#### CMD / Bash
-```bash
-docker-compose exec -T web python manage.py shell < lms/query_demo.py
-```
-
-### Hasil Query Comparison
-Berdasarkan pengujian pada project ini:
-
-- **N+1 version** → `28 queries`
-- **Optimized version** → `1 query`
-- **Dashboard optimized** → `3 queries`
-
-Demo ini menunjukkan perbedaan performa antara query biasa dan query yang telah dioptimasi menggunakan:
-- `select_related()`
-- `prefetch_related()`
-
----
-
-## 🛠️ Django Admin Configuration
-
-Django Admin telah dikonfigurasi dengan fitur:
-
-- `list_display`
-- `search_fields`
-- `list_filter`
-- inline `Lesson` pada `Course`
-
-### Admin Models
-- UserProfile
-- Category
-- Course
-- Lesson
-- Enrollment
-- Progress
-
----
-
-## 📦 Fixtures
-
-Project ini menyediakan **initial dummy data** dalam bentuk fixture JSON.
-
-### Export dummy data
-```powershell
-docker-compose exec web python manage.py dumpdata lms --indent 4 > lms_fixture.json
-```
-
-### Load dummy data
-```powershell
-docker-compose exec web python manage.py loaddata lms_fixture.json
-```
-
----
-
-## 📸 Screenshots
-
-Tambahkan screenshot berikut pada repository / dokumentasi:
-- Django welcome page
-- Django admin dashboard
-- Query optimization demo result
-
----
-
-## 📌 Submission
-
-Project ini diupload ke repository **GitHub/GitLab** dan link repository dikumpulkan melalui **KULINO**.
-
----
-
 ## 👨‍💻 Author
 
-Dibuat sebagai bagian dari tugas **Simple LMS Capstone Project** menggunakan **Django ORM**, **PostgreSQL**, dan **Docker**.
+Dibuat sebagai bagian dari tugas **Simple LMS Capstone Project** — Progress 3: REST API & Authentication System.
